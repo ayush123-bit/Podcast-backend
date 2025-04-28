@@ -1,11 +1,8 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import fetch from 'node-fetch';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { exec } from 'child_process';
-import say from 'say';
-import fs from 'fs';
-import path from 'path';
 
 dotenv.config();
 const app = express();
@@ -23,9 +20,7 @@ app.post('/api/generate', async (req, res) => {
   try {
     const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
     const prompt = `
-Write a podcast monologue on the topic: "${topic}". 
-
-Keep the length limited to about 300 words.
+Write a podcast monologue on the topic: "{topic}". 
 
 It should sound like a natural host talking directly to the audience, without using any speaker labels like "Host:", and without any directions like "(music fades)" or "(laughs)". 
 
@@ -34,6 +29,7 @@ Only focus on the content of the talk itself.
 The style should be casual, engaging, and conversational, as if the host is speaking freely and telling a story, including examples, questions, and smooth transitions.
 
 Do not include any formatting, brackets, or stage directions — just pure spoken words as they would sound in a real podcast.
+
 `;
     const result = await model.generateContent(prompt);
     const response = await result.response;
@@ -41,32 +37,32 @@ Do not include any formatting, brackets, or stage directions — just pure spoke
 
     console.log('🟢 Generated script snippet:', script.substring(0, 100), '...');
 
-    // Say.js doesn't natively save audio — we'll use a little trick using OS commands
-    const outputFilePath = path.join('./', 'output.wav');
-
-    // Use say.speak to play and record (Windows/Mac only)
-    say.export(script, null, 1.0, outputFilePath, (err) => {
-      if (err) {
-        console.error('🔴 Say.js error:', err);
-        return res.status(500).json({ error: 'Failed to generate audio.' });
-      }
-
-      // Read the file and send base64
-      fs.readFile(outputFilePath, (err, audioData) => {
-        if (err) {
-          console.error('🔴 File Read Error:', err);
-          return res.status(500).json({ error: 'Failed to read audio file.' });
+    const voiceId = process.env.ELEVENLABS_VOICE_ID;
+    const ttsResponse = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+      method: 'POST',
+      headers: {
+        'Accept': 'audio/mpeg',
+        'Content-Type': 'application/json',
+        'xi-api-key': process.env.ELEVENLABS_API_KEY
+      },
+      body: JSON.stringify({
+        text: script,
+        model_id: 'eleven_multilingual_v2',
+        voice_settings: {
+          stability: 0.5,
+          similarity_boost: 0.5
         }
-
-        const base64Audio = audioData.toString('base64');
-        res.json({ script, audio: `data:audio/wav;base64,${base64Audio}` });
-
-        // Optionally delete the file afterward
-        fs.unlink(outputFilePath, (err) => {
-          if (err) console.error('⚠️ Failed to delete temp audio:', err);
-        });
-      });
+      })
     });
+
+    if (!ttsResponse.ok) {
+      throw new Error('Failed to generate audio.');
+    }
+
+    const audioBuffer = await ttsResponse.arrayBuffer();
+    const base64Audio = Buffer.from(audioBuffer).toString('base64');
+
+    res.json({ script, audio: `data:audio/mpeg;base64,${base64Audio}` });
 
   } catch (error) {
     console.error('🔴 Error:', error.message);
