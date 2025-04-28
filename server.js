@@ -21,7 +21,7 @@ app.post('/api/generate', async (req, res) => {
     const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
     const prompt = `
 Write a podcast monologue on the topic: "{topic}". 
-
+Keep the length limited to about 300 words.
 It should sound like a natural host talking directly to the audience, without using any speaker labels like "Host:", and without any directions like "(music fades)" or "(laughs)". 
 
 Only focus on the content of the talk itself. 
